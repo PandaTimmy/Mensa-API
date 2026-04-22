@@ -45,7 +45,7 @@ print(response.json())
 | `GET` | `/api/v1/dishes/id` | Gerichtdetails per UUID |
 | `GET` | `/api/v1/prices` | Aktuelle Preisstruktur |
 
-→ Vollständige Dokumentation: [`DOCS.md`](./DOCS.md)
+→ Vollständige Dokumentation: [`DOCUMENTATION.md`](./DOCUMENTATION.md)
 
 ---
 
