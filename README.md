@@ -3,7 +3,7 @@
 > Inoffizielle REST API für den Speiseplan der Mensa Friedrichshafen (DHBW / HSKA).  
 > Datenquelle: Max-Manager (Seezeit Bodensee)
 
-![Status](https://img.shields.io/website?url=https%3A%2F%2Fmensa-api.timothyklimke.de&label=Mensa%20API&style=flat-square)
+![Status](https://img.shields.io/website?url=https%3A%2F%2Fapi.mensa-fn.de&label=Mensa%20API&style=flat-square)
 
 ---
 
