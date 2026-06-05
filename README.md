@@ -49,12 +49,6 @@ print(response.json())
 
 ---
 
-## Zugang
-
-Die API ist **invite-only**.
-
----
-
 ## Deployment
 
 Gehostet auf AWS Lightsail.
