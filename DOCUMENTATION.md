@@ -1,6 +1,6 @@
 # Mensa API – Dokumentation
 
-> **Inoffizielle API** | Betreiber: Timothy Klimke | Basis-URL: `https://mensa-api.timothyklimke.de`
+> **Inoffizielle API** | Betreiber: Timothy Klimke | Basis-URL: `https://api.mensa-fn.de`
 
 Diese API wandelt die XML-Daten des Max-Managers (Seezeit) in ein modernes JSON-Format um und stellt aktuelle sowie historische Speiseplandaten strukturiert bereit.
 
@@ -44,10 +44,15 @@ Gibt alle Speiseplaneinträge für einen definierten Zeitraum zurück.
 | :--- | :--- | :--- | :--- |
 | `from` | `string` | Nein | Startdatum im Format `YYYY-MM-DD` |
 | `to` | `string` | Nein | Enddatum im Format `YYYY-MM-DD` |
+| `include_all` | `boolean` | Nein | Bei `true` werden das vollständige **Gericht** und die **Preisstruktur** direkt in jeden Eintrag eingebettet, statt nur deren IDs zu liefern (siehe unten). Standard: `false` |
 
 Werden keine Parameter angegeben, gibt die API den aktuellen Speiseplan zurück.
 
 > **Hinweis:** Der maximal abfragbare Zeitraum beträgt **16 Tage**. Anfragen mit einem längeren Zeitraum werden mit `400 INVALID_DATE_RANGE_TOO_LONG` abgelehnt. Außerdem muss `from` ≤ `to` sein, andernfalls antwortet die API mit `400 INVALID_DATE_RANGE`.
+
+#### Standard-Modus (`include_all=false` oder weggelassen)
+
+Jeder Eintrag enthält nur **Referenzen** (`dish_id`, `price_id`). Die Details müssen separat über [`/api/v1/dishes/id`](#get-apiv1dishesid) und [`/api/v1/prices`](#get-apiv1prices) aufgelöst werden.
 
 **Beispiel-Request**
 
@@ -79,11 +84,88 @@ GET /api/v1/dish-schedule?from=2026-04-21&to=2026-04-30
 }
 ```
 
+#### Eingebetteter Modus (`include_all=true`)
+
+Statt `dish_id` und `price_id` enthält jeder Eintrag die vollständigen Objekte `dish` und `price`. Damit lässt sich ein kompletter Speiseplan inklusive aller Gericht- und Preisdetails mit **einer einzigen Anfrage** abrufen – die Folgeaufrufe an `/dishes/id` und `/prices` entfallen.
+
+**Beispiel-Request**
+
+```
+GET /api/v1/dish-schedule?from=2026-05-27&to=2026-05-27&include_all=true
+```
+
+**Antwortstruktur**
+
+| Feld | Typ | Beschreibung |
+| :--- | :--- | :--- |
+| `plan_id` | `string (UUID)` | Eindeutige ID dieses Speiseplaneintrags |
+| `date` | `string (ISO 8601)` | Datum, an dem das Gericht angeboten wird |
+| `category` | `string` | Ausgabestation (z. B. `"Menü I"`, `"Menü II"`) |
+| `dish` | `object` | Vollständiges Gericht-Objekt (Felder siehe [`/api/v1/dishes`](#get-apiv1dishes)) |
+| `price` | `object` | Vollständige Preisstruktur (Felder siehe unten) |
+| `as_of` | `string (ISO 8601)` | Zeitstempel der letzten Aktualisierung durch den Crawler |
+
+> **Hinweis:** Das eingebettete `price`-Objekt enthält die Preise **flach** (`id` plus die vier Nutzergruppen direkt), während der eigenständige [`/api/v1/prices`](#get-apiv1prices)-Endpunkt sie zusätzlich in ein verschachteltes `price`-Feld legt.
+
+**Struktur des eingebetteten `price`-Objekts**
+
+| Feld | Typ | Beschreibung |
+| :--- | :--- | :--- |
+| `id` | `string (UUID)` | Eindeutige ID dieser Preisstruktur |
+| `internal_students` | `string` | Preis für Studierende der eigenen Hochschule (in EUR) |
+| `external_students` | `string` | Preis für Studierende anderer Hochschulen (in EUR) |
+| `employees` | `string` | Preis für Hochschulmitarbeiter (in EUR) |
+| `guests` | `string` | Preis für Gäste und sonstige Externe (in EUR) |
+
+**Beispiel-Antwort**
+
+```json
+{
+    "plan_id": "019e698e-4dc9-7ead-809a-c0ebbfea973c",
+    "date": "2026-05-27T00:00:00.000Z",
+    "category": "Menü I",
+    "as_of": "2026-05-27T13:09:54.179Z",
+    "dish": {
+        "id": "019e698e-4dc7-771f-a8f1-b18af5729eb3",
+        "name": "Piccata von der Hähnchenbrust mit Tomaten-Bärlauchsauce und Pasta dazu Pudding mit Vanillegeschmack",
+        "name_additives": "Piccata von der Hähnchenbrust (25a,31) mit Tomaten-Bärlauchsauce und Pasta (25a) dazu Pudding mit Vanillegeschmack (31)",
+        "additives": ["25a", "31"],
+        "ingredients": [
+            {
+                "name": "Piccata von der Hähnchenbrust",
+                "additives": ["25a", "31"],
+                "sub_ingredients": []
+            },
+            {
+                "name": "Tomaten-Bärlauchsauce",
+                "additives": [],
+                "sub_ingredients": []
+            },
+            {
+                "name": "Pasta",
+                "additives": ["25a"],
+                "sub_ingredients": []
+            }
+        ],
+        "tags": ["49"],
+        "last_served": "2026-05-27T00:00:00.000Z",
+        "as_of": "2026-05-27T13:09:54.179Z"
+    },
+    "price": {
+        "id": "019e698e-4db2-7ba7-adfb-1de021c85dec",
+        "guests": "6.00",
+        "employees": "5.70",
+        "external_students": "8.70",
+        "internal_students": "4.70"
+    }
+}
+```
+
 ---
 
 ### GET /api/v1/dishes/id
 
-Gibt detaillierte Informationen zu einem oder mehreren Gerichten anhand ihrer UUIDs zurück.
+Gibt detaillierte Informationen zu einem oder mehreren Gerichten anhand ihrer UUIDs zurück. Die Antwort ist immer ein **Array** – auch bei nur einer ID.
 
 **Parameter**
 
@@ -94,13 +176,40 @@ Gibt detaillierte Informationen zu einem oder mehreren Gerichten anhand ihrer UU
 **Beispiel-Request**
 
 ```
-GET /api/v1/dishes/id?ids=019db039-1c82-7f7f-a399-f40596ba35c2
+GET /api/v1/dishes/id?ids=019e698e-4dc7-771f-a8f1-b18af5729eb3
 ```
 
 Mehrere IDs:
 
 ```
 GET /api/v1/dishes/id?ids=<uuid1>,<uuid2>,<uuid3>
+```
+
+**Antwortstruktur**
+
+Jeder Eintrag im Array hat dieselbe Struktur wie unter [`/api/v1/dishes`](#get-apiv1dishes) beschrieben.
+
+**Beispiel-Antwort**
+
+```json
+[
+    {
+        "id": "019e698e-4dc7-771f-a8f1-b18af5729eb3",
+        "name": "Piccata von der Hähnchenbrust mit Tomaten-Bärlauchsauce und Pasta dazu Pudding mit Vanillegeschmack",
+        "name_additives": "Piccata von der Hähnchenbrust (25a,31) mit Tomaten-Bärlauchsauce und Pasta (25a) dazu Pudding mit Vanillegeschmack (31)",
+        "additives": ["25a", "31"],
+        "tags": ["49"],
+        "ingredients": [
+            {
+                "name": "Piccata von der Hähnchenbrust",
+                "additives": ["25a", "31"],
+                "sub_ingredients": []
+            }
+        ],
+        "last_served": "2026-05-27T00:00:00.000Z",
+        "as_of": "2026-05-27T13:09:54.179Z"
+    }
+]
 ```
 
 ---
@@ -123,6 +232,7 @@ Gibt eine Liste aller in der Datenbank bekannten Gerichte zurück. Dieser Endpun
 | `ingredients` | `object[]` | Array der einzelnen Komponenten (Hauptspeise, Beilage, Sauce etc.) |
 | `last_served` | `string (ISO 8601)` | Datum, an dem das Gericht zuletzt auf dem Speiseplan stand |
 | `as_of` | `string (ISO 8601)` | Zeitstempel der letzten Aktualisierung durch den Crawler |
+| `frequency` | `number` | *(optional)* Wie oft das Gericht bisher angeboten wurde |
 
 **Struktur eines `ingredients`-Eintrags**
 
@@ -231,20 +341,28 @@ Die API gibt standardisierte HTTP-Statuscodes mit einem JSON-Body zurück. Jede 
 ```
 401 Unauthorized
 ```
+
+
 ```json
 {"error": "INVALID_API_KEY", "error_message": "INVALID_API_KEY"}
 ```
 
+
 ```
 400 Bad Request  →  from > to
 ```
+
+
 ```json
 {"error": "INVALID_DATE_RANGE", "error_message": "INVALID_DATE_RANGE"}
 ```
 
+
 ```
 400 Bad Request  →  Zeitraum > 16 Tage
 ```
+
+
 ```json
 {"error": "INVALID_DATE_RANGE_TOO_LONG", "error_message": "INVALID_DATE_RANGE_TOO_LONG"}
 ```
@@ -253,13 +371,47 @@ Die API gibt standardisierte HTTP-Statuscodes mit einem JSON-Body zurück. Jede 
 
 ## 4. Beispiel-Implementierung
 
-Das folgende Python-Beispiel ruft den Speiseplan für einen definierten Zeitraum ab und gibt alle Gerichte mit Name und Datum aus.
+### Variante A – Eine Anfrage mit `include_all=true` (empfohlen)
+
+Mit `include_all=true` liefert der Speiseplan Gericht und Preis bereits eingebettet. Eine einzige Anfrage genügt:
 
 ```python
 import requests
 
-API_KEY = "DEIN_API_KEY"
-BASE_URL = "https://mensa-api.timothyklimke.de/api/v1"
+API_KEY = "API_KEY"
+BASE_URL = "https://api.mensa-fn.de/api/v1"
+
+headers = {
+    "x-api-key": API_KEY,
+    "Content-Type": "application/json"
+}
+
+response = requests.get(
+    f"{BASE_URL}/dish-schedule",
+    params={"from": "2026-06-01", "to": "2026-06-15", "include_all": "true"},
+    headers=headers
+)
+
+if response.status_code != 200:
+    print(f"Fehler beim Abrufen des Speiseplans: {response.status_code}")
+    exit()
+
+for entry in response.json():
+    date = entry["date"][:10]
+    name = entry["dish"]["name"]
+    price = entry["price"]["internal_students"]
+    print(f"{date} | {entry['category']}: {name} ({price} €)")
+```
+
+### Variante B – Referenzen separat auflösen (`include_all` weggelassen)
+
+Ohne `include_all` liefert der Speiseplan nur `dish_id`/`price_id`; die Details werden in einem zweiten Schritt nachgeladen:
+
+```python
+import requests
+
+API_KEY = "API_KEY"
+BASE_URL = "https://api.mensa-fn.de/api/v1"
 
 headers = {
     "x-api-key": API_KEY,
@@ -269,7 +421,7 @@ headers = {
 # Schritt 1: Speiseplan abrufen
 schedule_response = requests.get(
     f"{BASE_URL}/dish-schedule",
-    params={"from": "2026-04-21", "to": "2026-04-30"},
+    params={"from": "2026-06-01", "to": "2026-06-15"},
     headers=headers
 )
 
